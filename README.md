@@ -22,16 +22,48 @@ cancelled trains are crossed out.
 
 ## Setup
 
-1. Install [arduino-cli](https://arduino.github.io/arduino-cli/), the `esp32` core and the `U8g2` and `ArduinoJson` libraries.
-2. Copy `firmware/secrets.example.h` to `firmware/secrets.h` and fill in your WiFi
-   (a second, optional network is tried if the first isn't reachable).
-3. Build and flash:
+Everything the build needs is pinned in [`firmware/sketch.yaml`](firmware/sketch.yaml):
+the board, the `esp32` core and the library versions. The first build downloads them
+automatically (about 1 GB for the ESP32 toolchain), so a new machine only needs
+`arduino-cli`.
+
+1. **Install [arduino-cli](https://arduino.github.io/arduino-cli/latest/installation/)**
 
    ```sh
-   cd firmware
-   arduino-cli compile --fqbn esp32:esp32:nologo_esp32c3_super_mini .
-   arduino-cli upload  --fqbn esp32:esp32:nologo_esp32c3_super_mini -p /dev/cu.usbmodem* .
+   brew install arduino-cli                    # macOS
+   curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh   # Linux
+   winget install ArduinoSA.CLI                # Windows
    ```
+
+2. **Add your WiFi:** copy `firmware/secrets.example.h` to `firmware/secrets.h` and fill
+   it in. The office network is optional; it's tried when home isn't reachable.
+   `secrets.h` is git-ignored.
+
+3. **Build and flash** (from the `firmware` folder):
+
+   ```sh
+   arduino-cli compile .
+   arduino-cli board list                      # find the port
+   arduino-cli upload -p <port> .
+   arduino-cli monitor -p <port> -c baudrate=115200   # optional: serial log
+   ```
+
+### USB connection
+
+No driver is needed: the ESP32-C3 has USB built in and shows up as a standard serial port.
+
+| OS      | Port looks like         | Notes |
+|---------|-------------------------|-------|
+| macOS   | `/dev/cu.usbmodem…`     | Allow the accessory if macOS asks. |
+| Linux   | `/dev/ttyACM0`          | Add yourself to the `dialout` group (`uucp` on Arch), then log in again. |
+| Windows | `COM3`, `COM4`, …       | Built-in driver on Windows 10 and later. |
+
+If no port shows up:
+
+- **Use a data cable.** Many USB-C cables only carry power.
+- **Plug the board straight into the computer**, not through a hub.
+- **Enter download mode:** hold **BOOT** while plugging the board in, then let go. After
+  flashing in this mode, press **RST** to start the new firmware.
 
 ## How it works
 
