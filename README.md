@@ -24,8 +24,8 @@ cancelled trains are crossed out.
 
 Everything the build needs is pinned in [`firmware/sketch.yaml`](firmware/sketch.yaml):
 the board, the `esp32` core and the library versions. The first build downloads them
-automatically (about 1 GB for the ESP32 toolchain), so a new machine only needs
-`arduino-cli`.
+automatically (the ESP32 toolchain is a ~2 GB download, ~6 GB on disk), so a new
+machine only needs `arduino-cli`.
 
 1. **Install [arduino-cli](https://arduino.github.io/arduino-cli/latest/installation/)**
 
