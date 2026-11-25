@@ -3,7 +3,7 @@
 A tiny departure board for the Munich S-Bahn: it shows the next three trains from
 **Donnersbergerbrücke** that stop at **Vaterstetten**, with live delays and cancellations.
 
-![Display showing three departures: S4 Zorneding in 4 min, S6 Ebersberg in 12 min with a delay icon, S6 Grafing cancelled](docs/display.png)
+![Display showing three departures: S4 Zorneding in 4 min, S6 Ebersberg in 12 min, S6 Grafing Bf cancelled](docs/display.png)
 
 The minutes are the real departure time, delays included; cancelled trains are crossed out.
 
