@@ -11,6 +11,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <NetworkClientSecure.h>
+#include <Preferences.h>
 #include <ArduinoJson.h>
 #include <U8g2lib.h>
 #include <time.h>
@@ -100,13 +101,24 @@ const WifiNetwork WIFI_NETWORKS[] = {
 #endif
 };
 
+constexpr int WIFI_NETWORK_COUNT = sizeof(WIFI_NETWORKS) / sizeof(WIFI_NETWORKS[0]);
+constexpr uint32_t WIFI_TIMEOUT_MS = 15000;
+
+// The network that worked last time is tried first (kept across reboots), so
+// the board doesn't wait for the home network to time out at the office.
+Preferences prefs;
+int lastWifi = 0;
+
 void setupWifi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
+  prefs.begin("board", false);
+  lastWifi = prefs.getUChar("wifi", 0);
+  if (lastWifi >= WIFI_NETWORK_COUNT) lastWifi = 0;
 }
 
 bool tryWifi(const char* ssid, const char* password, uint32_t timeoutMs) {
   Serial.printf("[WIFI] Trying %s...\n", ssid);
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
   WiFi.begin(ssid, password);
   // ESP32-C3 Super Mini: the onboard antenna is poorly matched and connections
   // fail (status 6) at full TX power. Must be set after begin().
@@ -116,17 +128,24 @@ bool tryWifi(const char* ssid, const char* password, uint32_t timeoutMs) {
   if (WiFi.status() == WL_CONNECTED) return true;
   // 1 = SSID not found, 4 = connect failed (e.g. wrong password), 6 = disconnected
   Serial.printf("[WIFI] %s failed, status %d\n", ssid, WiFi.status());
-  WiFi.disconnect(false, true);  // drop this attempt before trying the next network
+  // Switch the radio off to really abort this attempt: a plain disconnect
+  // leaves it connecting, and the next begin() is then rejected.
+  WiFi.disconnect(true, true);
   delay(200);
   return false;
 }
 
 void ensureWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
-  for (const WifiNetwork& net : WIFI_NETWORKS) {
-    if (tryWifi(net.ssid, net.password, 10000)) {
-      Serial.printf("[WIFI] Connected to %s, IP %s\n", net.ssid,
+  for (int k = 0; k < WIFI_NETWORK_COUNT; k++) {
+    int i = (lastWifi + k) % WIFI_NETWORK_COUNT;
+    if (tryWifi(WIFI_NETWORKS[i].ssid, WIFI_NETWORKS[i].password, WIFI_TIMEOUT_MS)) {
+      Serial.printf("[WIFI] Connected to %s, IP %s\n", WiFi.SSID().c_str(),
                     WiFi.localIP().toString().c_str());
+      if (i != lastWifi) {
+        lastWifi = i;
+        prefs.putUChar("wifi", i);
+      }
       return;
     }
   }
