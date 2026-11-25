@@ -41,12 +41,15 @@ const char* DESTINATIONS[] = {
     "Kirchseeon",   "Grafing", "Ebersberg",
 };
 
-// The API returns at most ~20 S-Bahn departures (only ~10-15 minutes at this
-// busy station), so we page through the timetable in 10-minute steps until we
-// have SHOW_TRAINS matching trains, looking at most LOOKAHEAD_MIN ahead.
+// A page holds the 20 departures (buses included) with the earliest *planned*
+// times among those leaving after the offset, so it only covers ~10-15 minutes
+// at this busy station, and less when late trains pile up. We page through the
+// timetable until the SHOW_TRAINS next matching trains are certain, stepping
+// at most PAGE_STEP_MIN and never past what the previous page covered.
 constexpr int SHOW_TRAINS = 3;
 constexpr int PAGE_STEP_MIN = 10;
 constexpr int LOOKAHEAD_MIN = 120;
+constexpr int MAX_PAGES = 20;
 
 // Show built-in sample trains instead of live data, to preview the layout.
 constexpr bool DEMO_MODE = false;
@@ -132,8 +135,11 @@ void ensureWifi() {
 
 // Fetches one page of departures and merges matching ones into `out`.
 // `http`/`client` are shared across pages so the TLS connection is reused.
+// `lastPlanned` is set to the latest planned time on the page (0 if empty):
+// trains planned after it may have been cut off.
 bool fetchPage(HTTPClient& http, NetworkClientSecure& client, int offsetMin, Departure* out,
-               int& n) {
+               int& n, time_t& lastPlanned) {
+  lastPlanned = 0;
   String url = String("https://www.mvg.de/api/bgw-pt/v3/departures?globalId=") + STATION_ID +
                "&limit=20&transportTypes=SBAHN&offsetInMinutes=" + offsetMin;
   if (!http.begin(client, url)) {
@@ -178,9 +184,10 @@ bool fetchPage(HTTPClient& http, NetworkClientSecure& client, int offsetMin, Dep
   for (JsonObject d : doc.as<JsonArray>()) {
     const char* line = d["label"] | "";
     const char* dest = d["destination"] | "";
+    time_t planned = (time_t)(d["plannedDepartureTime"].as<int64_t>() / 1000);
+    if (planned > lastPlanned) lastPlanned = planned;
     if (!destinationMatches(dest)) continue;
 
-    time_t planned = (time_t)(d["plannedDepartureTime"].as<int64_t>() / 1000);
     bool dup = false;
     for (int i = 0; i < n && !dup; i++)
       dup = out[i].planned == planned && strcmp(out[i].line, line) == 0;
@@ -199,12 +206,16 @@ bool fetchPage(HTTPClient& http, NetworkClientSecure& client, int offsetMin, Dep
 
 void drawBoard();
 
-void publish(Departure* found, int n) {
-  // Sort by real-time departure (insertion sort, n is tiny)
+// Sort by real-time departure (insertion sort, n is tiny)
+void sortDepartures(Departure* found, int n) {
   for (int i = 1; i < n; i++)
     for (int j = i; j > 0 && found[j].when < found[j - 1].when; j--) {
       Departure t = found[j]; found[j] = found[j - 1]; found[j - 1] = t;
     }
+}
+
+void publish(Departure* found, int n) {
+  sortDepartures(found, n);
   memcpy(departures, found, sizeof(Departure) * n);
   departureCount = n;
 }
@@ -224,9 +235,12 @@ bool fetchDepartures() {
   Departure found[MAX_DEPARTURES];
   int n = 0;
   int pages = 0;
-  for (int off = 0; off <= LOOKAHEAD_MIN; off += PAGE_STEP_MIN) {
+  int off = 0;
+  while (off <= LOOKAHEAD_MIN && pages < MAX_PAGES) {
     // The API occasionally times out: retry each page once.
-    bool ok = fetchPage(http, client, off, found, n) || fetchPage(http, client, off, found, n);
+    time_t lastPlanned = 0;
+    bool ok = fetchPage(http, client, off, found, n, lastPlanned) ||
+              fetchPage(http, client, off, found, n, lastPlanned);
     if (!ok) {
       if (pages == 0) return false;  // nothing usable: keep the previous data
       break;                         // partial result is still better than stale
@@ -237,7 +251,23 @@ bool fetchDepartures() {
       lastFetchOk = time(nullptr);
       drawBoard();
     }
-    if (n >= SHOW_TRAINS) break;  // enough to fill the screen
+
+    // The page is cut off by planned time, so a train planned after
+    // `lastPlanned` can be missing even if it leaves before the late trains
+    // that are on the page. Start the next page there (1 min margin).
+    time_t now = time(nullptr);
+    int next = off + PAGE_STEP_MIN;
+    if (lastPlanned) {
+      int coveredMin = (int)((lastPlanned - now) / 60) - 1;
+      if (coveredMin < next) next = coveredMin;
+    }
+    if (next <= off) next = off + 1;
+    off = next;
+
+    // Done once the trains on screen all leave before the next page starts:
+    // nothing still unseen can come before them.
+    sortDepartures(found, n);
+    if (n >= SHOW_TRAINS && found[SHOW_TRAINS - 1].when < now + off * 60) break;
   }
   http.end();
   publish(found, n);
