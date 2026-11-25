@@ -5,8 +5,7 @@ A tiny departure board for the Munich S-Bahn: it shows the next three trains fro
 
 ![Display showing three departures: S4 Zorneding in 4 min, S6 Ebersberg in 12 min with a delay icon, S6 Grafing cancelled](docs/display.png)
 
-The minutes are the real departure time, delays included. A ⚠ means the train is late;
-cancelled trains are crossed out.
+The minutes are the real departure time, delays included; cancelled trains are crossed out.
 
 ## Hardware
 

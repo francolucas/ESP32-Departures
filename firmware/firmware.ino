@@ -331,20 +331,14 @@ void drawMessage(const char* line1, const char* line2) {
   u8g2.sendBuffer();
 }
 
-// Short display name: the API's "Grafing-Bahnhof" doesn't fit next to the time.
+// Short display name: the API's "Grafing-Bahnhof" doesn't fit next to the
+// time (room for 10 characters), so "Bahnhof" becomes "Bf".
 void displayName(const char* dest, char* out, size_t len) {
-  if (strstr(dest, "Grafing")) strlcpy(out, "Grafing", len);
-  else strlcpy(out, dest, len);
-}
-
-// 9x8 warning triangle with a cut-out "!" marking a delayed train;
-// (x, y) is the top-left corner.
-void drawDelayIcon(int x, int y) {
-  u8g2.drawTriangle(x + 4, y, x, y + 7, x + 8, y + 7);  // filled
-  u8g2.setDrawColor(0);
-  u8g2.drawVLine(x + 4, y + 2, 3);  // "!" stem
-  u8g2.drawPixel(x + 4, y + 6);     // "!" dot
-  u8g2.setDrawColor(1);
+  strlcpy(out, dest, len);
+  char* p = strstr(out, "Bahnhof");
+  if (!p || p[7] != '\0') return;
+  if (p > out && p[-1] == '-') p[-1] = ' ';
+  strcpy(p, "Bf");
 }
 
 void drawBoard() {
@@ -378,8 +372,7 @@ void drawBoard() {
     u8g2.setDrawColor(1);
 
     // Right side first (its width decides how much room the name gets):
-    // "cancelled", or minutes until the real-time departure (delay included),
-    // preceded by a small warning icon if the train is late.
+    // "cancelled", or minutes until the real-time departure (delay included).
     constexpr int NAME_X = 21;
     int nameEnd;
     if (d.cancelled) {
@@ -395,10 +388,6 @@ void drawBoard() {
       int x = 128 - u8g2.getStrWidth(buf);
       u8g2.drawStr(x, base + 1, buf);
       nameEnd = x - 4;
-      if (d.delayMin > 0) {
-        drawDelayIcon(x - 12, base - 7);
-        nameEnd = x - 15;
-      }
     }
 
     // Destination, clipped so it never runs into the right-hand column
